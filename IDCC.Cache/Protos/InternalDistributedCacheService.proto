@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+option csharp_namespace = "IDCC.Cache.Grpc";
+
+import "google/protobuf/timestamp.proto";
+
+service PeerService {
+  rpc Get(GetRequest) returns (GetReponse);
+  rpc Set(SetRequest) returns (SetReponse);
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetReponse {
+  optional bytes value = 1;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message SetRequest {
+  string key = 1;
+  bytes value = 2;
+}
+
+message SetReponse {
+}
+
+message RemoveRequest {
+  string key = 1;
+}
+
+message RemoveResponse {
+}

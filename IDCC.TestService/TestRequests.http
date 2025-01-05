@@ -1,0 +1,6 @@
+@Address = http://localhost:5000
+
+GET {{Address}}/1
+Accept: application/json
+
+###

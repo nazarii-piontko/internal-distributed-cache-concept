@@ -1,0 +1,101 @@
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: idcc-service-account
+
+---
+# Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: idcc-service-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idcc-service-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: idcc-service-account
+roleRef:
+  kind: Role
+  name: idcc-service-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idcc-service
+  labels:
+    app: idcc-service
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: idcc-service
+  template:
+    metadata:
+      name: idcc-service
+      labels:
+        app: idcc-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: idcc-service-account
+      containers:
+        - name: service
+          image: idcc
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+              protocol: TCP
+            - containerPort: 5100
+              protocol: TCP
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "500m"
+            limits:
+              memory: "256Mi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      restartPolicy: Always
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: idcc-service
+  labels:
+    app: idcc-service
+spec:
+  type: NodePort
+  selector:
+    app: idcc-service
+  ports:
+    - protocol: TCP
+      port: 5000
+      nodePort: 30000
