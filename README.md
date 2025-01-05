@@ -61,10 +61,13 @@ app.MapInternalDistributedCache();
 ```csharp
 builder.WebHost.ConfigureKestrel((ctx, options) =>
 {
+    // Typical HTTP port
     options.ListenAnyIP(5000, listenOptions =>
     {
         listenOptions.Protocols = HttpProtocols.Http1;
     });
+
+    // Internal gRPC communication port 5001
     options.ListenAnyIP(5001, listenOptions =>
     {
         listenOptions.Protocols = HttpProtocols.Http2;
