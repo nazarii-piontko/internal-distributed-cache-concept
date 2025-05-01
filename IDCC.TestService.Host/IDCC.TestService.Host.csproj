@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <Sdk Name="Aspire.AppHost.Sdk" Version="9.2.1"/>
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <UserSecretsId>e0ab6e57-fa34-4225-bfbf-2dc5a2ba176f</UserSecretsId>
+        <RootNamespace>InternalDistributedCache.Service.Host</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Aspire.Hosting.AppHost" Version="9.2.1"/>
+        <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="9.2.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\IDCC.TestService\IDCC.TestService.csproj" />
+    </ItemGroup>
+
+</Project>

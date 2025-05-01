@@ -12,6 +12,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Misc", "Misc", "{21858ACF-0
 		LICENSE = LICENSE
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IDCC.TestService.Host", "IDCC.TestService.Host\IDCC.TestService.Host.csproj", "{4FF45711-ABCC-4F64-A094-9E8BFB173870}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{E309E0FD-B4A4-45EF-AB1B-77EA9BC5847A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E309E0FD-B4A4-45EF-AB1B-77EA9BC5847A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E309E0FD-B4A4-45EF-AB1B-77EA9BC5847A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4FF45711-ABCC-4F64-A094-9E8BFB173870}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FF45711-ABCC-4F64-A094-9E8BFB173870}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FF45711-ABCC-4F64-A094-9E8BFB173870}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FF45711-ABCC-4F64-A094-9E8BFB173870}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -1,6 +1,6 @@
-.PHONY: kind namespaces app scale-up scale-down k6 all
+.PHONY: kind namespaces db app scale-up scale-down k6 all
 
-all: kind namespaces app
+all: kind namespaces db app
 
 kind:
 	kind delete cluster --name idcc
@@ -8,6 +8,11 @@ kind:
 
 namespaces:
 	kubectl --context kind-idcc create namespace test
+
+db:
+	kubectl -n test --context kind-idcc delete -f postgres.yaml || true
+	kubectl -n test --context kind-idcc apply -f postgres.yaml
+	kubectl -n test wait pod/postgres --for=condition=Ready --timeout=120s
 
 app:
 	docker build -t idcc:latest -f ./Dockerfile ../

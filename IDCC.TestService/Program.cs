@@ -1,17 +1,33 @@
-using System.Text;
 using System.Text.Json;
-using Bogus;
 using IDCC.Cache;
+using InternalDistributedCache.Service;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddInternalDistributedCache();
-builder.Services.AddHealthChecks();
+builder.AddServiceDefaults();
 
-builder.WebHost.ConfigureKestrel((ctx, options) =>
+builder.Services.AddProblemDetails();
+
+builder.Services.AddDbContext<EmployeesDbContext>(o =>
 {
-    options.ListenAnyIP(5000, listenOptions =>
+    o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
+builder.Services.AddTransient<EmployeesDbContextSeeder>();
+
+builder.Services.Configure<InternalDistributedCacheOptions>(builder.Configuration.GetSection("InternalDistributedCache"));
+builder.Services.AddInternalDistributedCache();
+
+builder.WebHost.ConfigureKestrel((context, options) =>
+{
+    var httpPort = context.Configuration.GetValue("HTTP_PORTS", 5000);
+    var urls = context.Configuration["URLS"];
+    if (!string.IsNullOrEmpty(urls) && Uri.TryCreate(urls, UriKind.Absolute, out var uri))
+        httpPort = uri.Port;
+    
+    options.ListenAnyIP(httpPort, listenOptions =>
     {
         listenOptions.Protocols = HttpProtocols.Http1;
     });
@@ -24,43 +40,93 @@ builder.WebHost.ConfigureKestrel((ctx, options) =>
 var app = builder.Build();
 
 app.MapInternalDistributedCache();
-app.MapHealthChecks("/health").DisableHttpMetrics();
+
+app.UseExceptionHandler();
 
 app.UseRouting();
-app.MapGet("/{id:int}", async ([FromRoute] int id,
+app.MapGet("/{id:long}", async (
+    [FromRoute] long id,
+    EmployeesDbContext dbContext,
     IInternalDistributedCache cache,
     HttpContext context,
     CancellationToken cancellationToken) =>
 {
-    var cacheKey = id.ToString();
+    var cacheKey = $"employee-{id}";
     var cachedValue = await cache.GetAsync(cacheKey, cancellationToken);
     if (cachedValue != null)
     {
         context.Response.Headers.Append("X-Cache", "HIT");
-        return JsonSerializer.Deserialize<User>(cachedValue);
+        return JsonSerializer.Deserialize<EmployeeCacheData>(cachedValue)?.Data;
     }
 
-    // Simulate some long operation
-    await Task.Delay(1000, cancellationToken);
+    var employee = await dbContext.Employers
+        .Include(e => e.Department)
+        .AsNoTracking()
+        .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
-    var faker = new Faker<User>()
-        .RuleFor(u => u.Id, f => id)
-        .RuleFor(u => u.Email, f => f.Internet.Email())
-        .RuleFor(u => u.FullName, f => f.Name.FullName());
-    var user = faker.Generate();
-    
-    await cache.SetAsync(cacheKey, JsonSerializer.SerializeToUtf8Bytes(user), cancellationToken);
-    
+    await cache.SetAsync(
+        cacheKey,
+        JsonSerializer.SerializeToUtf8Bytes(new EmployeeCacheData { Data = employee }),
+        employee?.Version ?? 0,
+        null,
+        cancellationToken);
+
     context.Response.Headers.Append("X-Cache", "MISS");
-    return user;
+    return employee;
 });
+
+app.MapPut("/{id:long}", async (
+    [FromRoute] long id,
+    [FromBody] EmployeeUpdateRequest request,
+    EmployeesDbContext dbContext,
+    IInternalDistributedCache cache,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    var employee = await dbContext.Employers
+        .Include(e => e.Department)
+        .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+
+    if (employee == null)
+    {
+        context.Response.StatusCode = 404;
+        return null;
+    }
+
+    employee.FullName = request.FullName;
+    employee.Version++;
+    
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    var cacheKey = $"employee-{id}";
+    await cache.SetAsync(
+        cacheKey,
+        JsonSerializer.SerializeToUtf8Bytes(new EmployeeCacheData { Data = employee }),
+        employee.Version,
+        null,
+        cancellationToken);
+
+    return employee;
+});
+
 app.MapGet("/stat", ([FromServices] IInternalDistributedCache cache) => cache.GetInfo());
+
+app.MapDefaultEndpoints();
+
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<EmployeesDbContextSeeder>();
+    seeder.Seed(1000);
+}
 
 app.Run();
 
-public sealed class User()
+public sealed class EmployeeCacheData
 {
-    public int Id { get; set; }
-    public string Email { get; set; } = null!;
-    public string FullName { get; set; } = null!;
+    public Employee? Data { get; init; }
+}
+
+public sealed class EmployeeUpdateRequest
+{
+    public string FullName { get; init; } = null!;
 }

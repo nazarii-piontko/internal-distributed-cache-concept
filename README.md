@@ -1,159 +1,185 @@
-# Internal Distributed Cache Concept
+# Internal Distributed Cache Concept (IDCC)
 
-A proof-of-concept implementation of a distributed in-memory cache for ASP.NET Core applications running in Kubernetes clusters. This implementation uses rendezvous hashing (also known as highest random weight hashing) for consistent key distribution across cache nodes.
+A proof-of-concept implementation of a distributed in-memory cache for ASP.NET Core applications running in Kubernetes clusters. This implementation uses Murmur3-based rendezvous hashing for consistent key distribution across cache nodes.
 
-> ⚠️ **Note**: This is a proof-of-concept implementation. While the core functionality works, it lacks many features required for production use.
+> ⚠️ **Note**: This is a proof-of-concept implementation intended for educational purposes. While the core functionality works, it lacks many features required for production use.
 
-## Similar Solutions
+## Overview
 
-This implementation shares conceptual similarities with Hazelcast IMDG (In-Memory Data Grid), particularly in its embedded deployment mode where cache nodes run directly within application processes. While Hazelcast is implemented in Java and uses consistent hashing for data distribution, our C# implementation focuses on Kubernetes-native deployment with .NET applications and uses rendezvous hashing for simpler key distribution while maintaining similar data locality benefits.
-
-## Features
-
-- 🔄 Automatic peer discovery in Kubernetes clusters
-- 📈 Rendezvous hashing for consistent key distribution
-- 🔄 Configurable replication factor
-- 🚀 gRPC-based peer communication
-- 🔒 Local memory storage using `IMemoryCache`
-- ⚡ No external dependencies required
+IDCC provides a simple, embeddable distributed cache that:
+- Runs within your application pods
+- Automatically discovers peers in the same Kubernetes namespace
+- Distributes and replicates data across peers using configurable replication
+- Uses gRPC for efficient peer-to-peer communication
+- Stores data in-memory using `IMemoryCache`
+- Requires no external infrastructure or dependencies
 
 ## How It Works
 
-### Key Distribution
+### Key Distribution with Rendezvous Hashing
 
-The cache uses rendezvous hashing (HRW) to determine which peers should store each key. This provides:
+The cache uses the Murmur3 algorithm to implement rendezvous hashing (also known as highest random weight hashing) for determining which peers should store each key:
 
+```csharp
+// From MurmurKeysDistributionHashAlgorithm.cs
+public uint ComputeCombinedHash(uint serverHash, uint keyHash) => 
+    (uint)(((ulong)serverHash * keyHash) & 0xFFFFFFFF);
+```
+
+This approach provides:
 - Consistent key distribution across peers
 - Minimal key redistribution when peers are added/removed
-- Natural load balancing
+- Natural load balancing across the cluster
 
 ### Data Replication
 
-Keys are replicated across multiple peers (configurable via `ReplicationFactor`):
+Keys are replicated across multiple peers based on the configured `ReplicationFactor`:
+
 ```csharp
-services.Configure<InternalDistributedCacheOptions>(options => 
-{
-    options.ReplicationFactor = 3; // Each key is stored on 3 peers
-    options.MinReplicationSuccesses = 2; // Operations succeed if 2/3 peers respond
-});
+// Example configuration in appsettings.json
+"InternalDistributedCache": {
+  "ReplicationFactor": 3,       // Each key is stored on 3 peers
+  "MinReplicationConsensusSize": 2  // Get operations need 2/3 peers to agree
+}
 ```
 
-### Peer Discovery
+### Peer Discovery in Kubernetes
 
-The cache automatically discovers peers in your Kubernetes cluster by:
-1. Watching for pod changes in the same namespace
-2. Filtering pods by labels
+IDCC automatically discovers peers in your Kubernetes cluster by:
+1. Using the Kubernetes API to watch pods with matching labels
+2. Tracking pod lifecycle events (creation, deletion)
 3. Establishing gRPC connections between peers
+4. Rebalancing keys when the peer topology changes
 
-## Usage
+For non-Kubernetes environments, a `DummyPeersDiscoveryStrategy` is provided for local development.
 
-1. Add the cache to your services:
+## Getting Started
+
 ```csharp
+// 1. Register the cache service
+services.Configure<InternalDistributedCacheOptions>(config.GetSection("InternalDistributedCache"));
 services.AddInternalDistributedCache();
-```
 
-2. Map the gRPC endpoints:
-```csharp
+// 2. Map the gRPC endpoints
 app.MapInternalDistributedCache();
-```
 
-3. Configure Kestrel to listen for gRPC:
-```csharp
-builder.WebHost.ConfigureKestrel((ctx, options) =>
-{
-    options.ListenAnyIP(5000, listenOptions =>
-    {
-        listenOptions.Protocols = HttpProtocols.Http1;
-    });
-    options.ListenAnyIP(5001, listenOptions =>
-    {
-        listenOptions.Protocols = HttpProtocols.Http2;
-    });
+// 3. Configure Kestrel for HTTP and gRPC
+builder.WebHost.ConfigureKestrel((context, options) => {
+    options.ListenAnyIP(5000, o => o.Protocols = HttpProtocols.Http1);
+    options.ListenAnyIP(5001, o => o.Protocols = HttpProtocols.Http2);
 });
-```
 
-4. Use the cache in your code:
-```csharp
-public class MyService
+// 4. Use in services
+public async Task<MyData?> GetDataAsync(string key)
 {
-    private readonly IInternalDistributedCache _cache;
-
-    public MyService(IInternalDistributedCache cache)
-    {
-        _cache = cache;
-    }
-
-    public async Task<byte[]?> GetAsync(string key)
-    {
-        return await _cache.GetAsync(key);
-    }
+    var bytes = await _cache.GetAsync(key);
+    return bytes != null ? JsonSerializer.Deserialize<MyData>(bytes) : null;
 }
 ```
 
-5. Configuration options
+## Configuration Options
 
 ```csharp
-public class InternalDistributedCacheOptions
+public sealed class InternalDistributedCacheOptions
 {
+    public const int DefaultPeerPort = 5001;
+    
+    // Use HTTPS for peer communication (default: false)
     public bool PeerHttps { get; set; } = false;
-    public int PeerPort { get; set; } = 5001;
-    public int PeersDiscoveryIntervalSeconds { get; set; } = 10;
+
+    // Port for peer gRPC communication
+    public int PeerPort { get; set; } = DefaultPeerPort;
+
+    // How often to check for peer changes (seconds)
+    public int PeersDiscoveryIntervalSeconds { get; set; } = 8;
+
+    // Random jitter added to discovery interval to prevent thundering herd
     public int PeersDiscoveryJitterSeconds { get; set; } = 2;
+    
+    // Number of peers to store each key on
     public int ReplicationFactor { get; set; } = 3;
-    public int MinReplicationSuccesses { get; set; } = 1;
+    
+    // Minimum number of peers required for consensus on Get operations
+    public int MinReplicationConsensusSize { get; set; } = 2;
 }
 ```
 
-## Limitations
+## Running the Test Service
 
-This proof-of-concept implementation has several limitations that should be considered before using it in production environments:
-
-### Data Management
-The cache operates purely in-memory without persistence or TTL support. All data is lost when pods restart, and there's no automatic cleanup of stale data. Large cached items might consume significant memory as there's no compression support.
-
-### Consistency and Reliability
-The implementation provides only basic consistency guarantees. While it uses timestamps for conflict resolution, there's no formal consistency model implementation. During network partitions or pod failures, the cache might return stale data or fail to maintain the configured replication factor.
-
-### Operational Aspects
-The current implementation lacks several operational features necessary for production use: no metrics for monitoring cache performance, no health checks beyond basic pod liveness, no circuit breakers for handling peer failures gracefully, and no support for cache warming after pod restarts. The peer discovery mechanism, while functional, might need tuning for larger clusters.
-
-### Performance Optimization
-Batch operations are not supported, which might impact performance when dealing with multiple keys. Additionally, there's no query or pattern-based key operations, limiting its use for more complex caching scenarios.
-
-The current C# implementation of peer selection using LINQ for ordering and filtering peers is not optimized for high-performance scenarios. Each cache operation performs sorting and peer selection using LINQ queries, which creates unnecessary object allocations and CPU overhead. A more optimized implementation would use specialized data structures to reduce the computational overhead of peer selection.
-
-## Development and Testing
-
-The project includes a test service that can be deployed to a local Kubernetes cluster using Kind.
+The repository includes a test service that demonstrates the cache in action. It uses:
+- A simple employee database with PostgreSQL
+- An ASP.NET Core API that caches database results
+- A k6 load testing script to evaluate cache performance
 
 ### Prerequisites
 
-1. [**Docker**](https://docs.docker.com/get-docker/)
-2. [**Kind (Kubernetes in Docker)**](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
-3. [**kubectl**](https://kubernetes.io/docs/tasks/tools/)
-4. [**k6**](https://k6.io/docs/get-started/installation/)
+1. [Docker](https://docs.docker.com/get-docker/)
+2. [Kind (Kubernetes in Docker)](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
+3. [kubectl](https://kubernetes.io/docs/tasks/tools/)
+4. [k6](https://k6.io/docs/get-started/installation/)
 
-### Local Testing
+### Local Testing with Kind
 
-1. Set up the test environment with [Makefile](IDCC.TestService/Makefile):
+1. Set up a local Kubernetes cluster and deploy the test service:
    ```bash
+   cd IDCC.TestService
    make all
    ```
 
-2. Scale the deployment:
+2. Scale the deployment to see how keys redistribute:
    ```bash
    make scale-up   # Add one replica
    make scale-down # Remove one replica
    ```
 
-3. Run k6 load tests with web dashboard enabled:
+3. Run load tests to evaluate cache performance:
    ```bash
    make k6
    ```
 
+## Architecture and Components
+
+### Core Components
+
+- **IInternalDistributedCache**: Main interface for cache operations
+- **IPeersRegistry**: Manages the distributed peers topology
+- **IKeysDistributionHashAlgorithm**: Implements rendezvous hashing
+- **IPeersDiscoveryStrategy**: Discovers peers in the cluster
+- **IPeer**: Represents a cache peer (local or remote)
+
+### Data Distribution and Replication
+
+For each cache operation:
+
+1. The key is hashed using Murmur3
+2. Peers are ranked by their combined hash weight with the key
+3. The top N peers (based on ReplicationFactor) are selected
+4. The operation is performed on all selected peers
+5. For reads, a consensus is required based on MinReplicationConsensusSize
+
+## Data Consistency Approach
+
+IDCC uses a client-provided versioning approach that works perfectly for database-backed applications. The database serves as the source of truth and provides version numbers (typically timestamps or sequence IDs. Each write operation includes this version number from the source database. When conflicts occur, the higher version always wins. This solves the consistency problem without complex distributed consensus protocols.
+
+```csharp
+// Example: Caching a database entity with its version
+var employee = await dbContext.Employees.FindAsync(id);
+await cache.SetAsync(
+    $"employee-{id}",
+    JsonSerializer.SerializeToUtf8Bytes(employee),
+    employee.Version, // Database-provided version
+    ttlSeconds: 3600,
+    cancellationToken);
+```
+
+This approach is ideal for caching scenarios where:
+- You already have a database with versioned entities
+- Cache entries represent database records
+- The database remains the authority for data consistency
+
 ## Contributing
 
-This is a proof-of-concept implementation. Feel free to fork, experiment, and improve. Issues and pull requests are welcome.
+This is a proof-of-concept implementation intended for educational purposes. Feel free to fork, experiment, and improve upon the base concepts.
 
 ## License
 

@@ -2,6 +2,7 @@
 
     <PropertyGroup>
         <TargetFramework>net9.0</TargetFramework>
+        <OutputType>Exe</OutputType>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
@@ -19,7 +20,25 @@
     </ItemGroup>
     
     <ItemGroup>
+      <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="9.4.0"/>
+      <PackageReference Include="Microsoft.Extensions.ServiceDiscovery" Version="9.2.1"/>
+      <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.11.2"/>
+      <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.11.2"/>
+      <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.11.1"/>
+      <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" Version="1.11.0-beta.2" />
+      <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.11.1"/>
+      <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.11.1"/>
+    </ItemGroup>
+    
+    <ItemGroup>
       <PackageReference Include="Bogus" Version="35.6.1" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.4" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.4">
+        <PrivateAssets>all</PrivateAssets>
+        <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      </PackageReference>
+      <PackageReference Include="Npgsql" Version="9.0.3" />
+      <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     </ItemGroup>
 
 </Project>

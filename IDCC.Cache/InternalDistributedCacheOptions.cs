@@ -8,11 +8,11 @@ public sealed class InternalDistributedCacheOptions
 
     public int PeerPort { get; set; } = DefaultPeerPort;
 
-    public int PeersDiscoveryIntervalSeconds { get; set; } = 10;
+    public int PeersDiscoveryIntervalSeconds { get; set; } = 8;
 
     public int PeersDiscoveryJitterSeconds { get; set; } = 2;
     
     public int ReplicationFactor { get; set; } = 3;
     
-    public int MinReplicationSuccesses { get; set; } = 1;
+    public int MinReplicationConsensusSize { get; set; } = 2;
 }

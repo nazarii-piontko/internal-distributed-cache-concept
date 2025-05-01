@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Grpc.Core;
 using Grpc.Net.Client;
 using IDCC.Cache.Grpc;
 using Microsoft.Extensions.Logging;
@@ -19,23 +20,24 @@ internal sealed class RemotePeer(
 
     public PeerType Type => PeerType.Remote;
     
-    public async Task<CacheValue?> GetAsync(string key, CancellationToken cancellationToken)
+    public async Task<GetResult> GetAsync(string key, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         try
         {
             var request = new GetRequest { Key = key };
             var response = await client.GetAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (response is not { HasValue: true })
-                return null;
-            
-            var cachedValue = new CacheValue(response.Value.ToByteArray(), DateTime.UtcNow);
-            return cachedValue;
+            var cachedValue = new CacheValue(response.Value.ToByteArray(), response.Version);
+            return GetResult.Found(cachedValue);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+        {
+            return GetResult.NotFound();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get value from remote peer {Id}", Id);
-            throw new InternalDistributedCacheException("Failed to get value from remote peer", ex);
+            return GetResult.NotFound();
         }
         finally
         {
@@ -44,7 +46,7 @@ internal sealed class RemotePeer(
         }
     }
 
-    public async Task SetAsync(string key, byte[] value, CancellationToken cancellationToken)
+    public async Task<SetResult> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         try
@@ -52,9 +54,19 @@ internal sealed class RemotePeer(
             var request = new SetRequest
             {
                 Key = key,
-                Value = Google.Protobuf.ByteString.CopyFrom(value)
+                Value = Google.Protobuf.ByteString.CopyFrom(value),
+                Version = version,
             };
+            if (ttlSeconds.HasValue)
+                request.TtlSeconds = ttlSeconds.Value;
+            
             await client.SetAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            
+            return SetResult.Updated();
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.Aborted)
+        {
+            return SetResult.NewerExists();
         }
         catch (Exception ex)
         {
@@ -68,13 +80,28 @@ internal sealed class RemotePeer(
         }
     }
 
-    public async Task RemoveAsync(string key, CancellationToken cancellationToken)
+    public async Task<RemoveResult> RemoveAsync(string key, long version, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         try
         {
-            var request = new RemoveRequest { Key = key };
+            var request = new RemoveRequest
+            {
+                Key = key,
+                Version = version
+            };
+            
             await client.RemoveAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            
+            return RemoveResult.Removed();
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+        {
+            return RemoveResult.NotFound();
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.Aborted)
+        {
+            return RemoveResult.VersionMismatch();
         }
         catch (Exception ex)
         {

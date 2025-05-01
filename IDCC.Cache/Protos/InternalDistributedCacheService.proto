@@ -2,11 +2,9 @@ syntax = "proto3";
 
 option csharp_namespace = "IDCC.Cache.Grpc";
 
-import "google/protobuf/timestamp.proto";
-
 service PeerService {
-  rpc Get(GetRequest) returns (GetReponse);
-  rpc Set(SetRequest) returns (SetReponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
   rpc Remove(RemoveRequest) returns (RemoveResponse);
 }
 
@@ -14,21 +12,33 @@ message GetRequest {
   string key = 1;
 }
 
-message GetReponse {
-  optional bytes value = 1;
-  google.protobuf.Timestamp created_at = 3;
+message GetResponse {
+  bytes value = 1;
+  
+  // Client version of the cache item
+  int64 version = 2;
 }
 
 message SetRequest {
   string key = 1;
+  
   bytes value = 2;
+
+  // Client version of the cache item
+  int64 version = 3;
+
+  // Optional time to live in seconds from now
+  optional int32 ttl_seconds = 4;
 }
 
-message SetReponse {
+message SetResponse {
 }
 
 message RemoveRequest {
   string key = 1;
+
+  // Client version of the cache item
+  int64 version = 2;
 }
 
 message RemoveResponse {

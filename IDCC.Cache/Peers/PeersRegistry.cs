@@ -79,7 +79,7 @@ internal sealed class PeersRegistry(
                     continue;
                 
                 logger.LogDebug("Removing key {Key} from {PeerId} due to migration to a new peer", key, LocalPeer.Id);
-                await LocalPeer.RemoveAsync(key, cancellationToken);
+                LocalPeer.Remove(key);
             }
         }
 

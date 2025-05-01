@@ -37,14 +37,15 @@ public sealed class LocalPeerTests : IDisposable
     {
         // Arrange
         const string key = "test-key";
-        await _peer.SetAsync(key, [1], CancellationToken.None);
+        await _peer.SetAsync(key, [1], 1, null, CancellationToken.None);
         
         // Act
         var result = await _peer.GetAsync(key, CancellationToken.None);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal([1], result.Value);
+        Assert.Equal([1], result.Value?.Data);
+        Assert.Equal(1, result.Value?.Version);
     }
 
     [Fact]
@@ -52,10 +53,10 @@ public sealed class LocalPeerTests : IDisposable
     {
         // Arrange
         const string key = "test-key";
-        await _peer.SetAsync(key, [1], CancellationToken.None);
+        await _peer.SetAsync(key, [1], 1, null, CancellationToken.None);
 
         // Act
-        await _peer.RemoveAsync(key, CancellationToken.None);
+        await _peer.RemoveAsync(key, 1, CancellationToken.None);
 
         // Assert
         var result = await _peer.GetAsync(key, CancellationToken.None);
@@ -66,9 +67,9 @@ public sealed class LocalPeerTests : IDisposable
     public async Task GetCachedKeys_ReturnsAllKeys()
     {
         // Arrange
-        await _peer.SetAsync("key1", [1], CancellationToken.None);
-        await _peer.SetAsync("key2", [2], CancellationToken.None);
-        await _peer.SetAsync("key3", [3], CancellationToken.None);
+        await _peer.SetAsync("key1", [1], 1, null, CancellationToken.None);
+        await _peer.SetAsync("key2", [2], 1, null, CancellationToken.None);
+        await _peer.SetAsync("key3", [3], 1, null, CancellationToken.None);
 
         // Act
         var keys = _peer.GetCachedKeys().ToList();

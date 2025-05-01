@@ -11,65 +11,41 @@ internal sealed class InternalDistributedCache(
     public async Task<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         var peers = peersRegistry.GetPeersForKey(key);
-        var tasks = peers.Select(p => p.GetAsync(key, cancellationToken)).ToList();
+        var tasks = peers
+            .Select(p => p.GetAsync(key, cancellationToken))
+            .ToList();
 
-        var latestCachedValue = default(CacheValue);
-        var successfulCount = 0;
+        var results = new List<GetResult>(tasks.Count);
         await foreach (var t in Task.WhenEach(tasks).WithCancellation(cancellationToken))
         {
-            if (t.IsCompletedSuccessfully)
-            {
-                if (t is { Result: { } cacheValue } &&
-                    (latestCachedValue == null || cacheValue.CreatedAt > latestCachedValue.CreatedAt))
-                    latestCachedValue = cacheValue;
-                successfulCount++;
-            }
+            // Null in case of exception is not ideal, but it is fine for test purposes
+            results.Add(t.Result);
         }
-        
-        if (successfulCount < options.Value.MinReplicationSuccesses)
-            throw new AggregateException(
-                "Failed to get value from peers",
-                tasks.Where(t => t.IsFaulted).Select(t => t.Exception!));
 
-        return latestCachedValue?.Value;
+        var maxVersionResult = results.Where(x => x.Status == GetResultStatus.Found).MaxBy(x => x.Value!.Version);
+        var maxVersion = maxVersionResult?.Value!.Version ?? long.MinValue;
+        var maxVersionCount = results.Where(x => x.Status == GetResultStatus.Found).Count(x => x.Value!.Version == maxVersion);
+        var notFoundCount = results.Count(x => x.Status == GetResultStatus.NotFount);
+
+        if (maxVersionCount > notFoundCount && maxVersionCount >= options.Value.MinReplicationConsensusSize)
+            return maxVersionResult?.Value!.Data;
+        return null;
     }
 
-    public async Task SetAsync(string key, byte[] value, CancellationToken cancellationToken = default)
+    public Task SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)
     {
         var peers = peersRegistry.GetPeersForKey(key);
-        var tasks = peers.Select(p => p.SetAsync(key, value, cancellationToken)).ToList();
+        var tasks = peers.Select(p => p.SetAsync(key, value, version, ttlSeconds, cancellationToken));
         
-        var successfulCount = 0;
-        await foreach (var t in Task.WhenEach(tasks).WithCancellation(cancellationToken))
-        {
-            if (t.IsCompletedSuccessfully)
-                successfulCount++;
-        }
-        
-        if (successfulCount < options.Value.MinReplicationSuccesses)
-            throw new AggregateException(
-                "Failed to set value to peers",
-                tasks.Where(t => t.IsFaulted).Select(t => t.Exception!));
-
+        return Task.WhenAll(tasks);
     }
 
-    public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
+    public Task RemoveAsync(string key, long version, CancellationToken cancellationToken = default)
     {
         var peers = peersRegistry.GetPeersForKey(key);
-        var tasks = peers.Select(p => p.RemoveAsync(key, cancellationToken)).ToList();
+        var tasks = peers.Select(p => p.RemoveAsync(key, version, cancellationToken));
 
-        var successfulCount = 0;
-        await foreach (var t in Task.WhenEach(tasks).WithCancellation(cancellationToken))
-        {
-            if (t.IsCompletedSuccessfully)
-                successfulCount++;
-        }
-        
-        if (successfulCount < options.Value.MinReplicationSuccesses)
-            throw new AggregateException(
-                "Failed to get value from peers",
-                tasks.Where(t => t.IsFaulted).Select(t => t.Exception!));
-
+        return Task.WhenAll(tasks);
     }
 
     public InternalDistributedCacheInfo GetInfo()
@@ -78,6 +54,6 @@ internal sealed class InternalDistributedCache(
         return new InternalDistributedCacheInfo(
             localPeer?.Id ?? string.Empty,
             peersRegistry.DiscoveredPeers.Select(p => p.Id).ToList(),
-            localPeer?.GetCachedKeys().Count() ?? 0);
+            localPeer?.CachedItemsCount ?? 0);
     }
 }
