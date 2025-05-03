@@ -44,7 +44,6 @@ public sealed class LocalPeerTests : IDisposable
         var result = await _peer.GetAsync(key, CancellationToken.None);
 
         // Assert
-        Assert.NotNull(result);
         Assert.Equal([1], result.Entry?.Data);
         Assert.Equal(1, result.Entry?.Version);
     }

@@ -88,10 +88,7 @@ app.MapPut("/{id:long}", async (
         .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
     if (employee == null)
-    {
-        context.Response.StatusCode = 404;
-        return null;
-    }
+        return Results.NotFound();
 
     employee.FullName = request.FullName;
     employee.Version++;
@@ -108,7 +105,7 @@ app.MapPut("/{id:long}", async (
     
     context.Response.Headers.Append("X-Cache-Update", cacheUpdateStatus == CacheUpdateStatus.Updated ? "OK" : "FAIL");
 
-    return employee;
+    return Results.Ok(employee);
 });
 
 app.MapGet("/stat", ([FromServices] IInternalDistributedCache cache) => cache.GetInfo());
