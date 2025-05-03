@@ -3,9 +3,10 @@ import { check } from 'k6';
 import { Rate } from 'k6/metrics';
 
 const cacheHitRate = new Rate('cache_hit_rate');
+const cacheUpdateRate = new Rate('cache_update_rate');
 
 const BASE_URL = 'http://localhost:30000';
-const TOTAL_EMPLOYEES = 1000;
+const TOTAL_EMPLOYEES = 10000;
 const UPDATE_PROBABILITY = 0.1;
 
 export const options = {
@@ -33,9 +34,14 @@ export default function () {
         };
 
         const res = http.put(`${BASE_URL}/${id}`, payload, { headers });
+        const cacheHeader = res.headers['X-Cache-Update'];
+
+        // Add to custom rate metric for cache
+        cacheUpdateRate.add(cacheHeader === 'OK');
 
         check(res, {
             'PUT status is 200': (r) => r.status === 200,
+            'X-Cache-Update header present': (r) => 'X-Cache-Update' in r.headers,
         });
 
     } else {
@@ -43,7 +49,7 @@ export default function () {
         const res = http.get(`${BASE_URL}/${id}`);
         const cacheHeader = res.headers['X-Cache'];
 
-        // Add to custom rate metric if HIT
+        // Add to custom rate metric for cache
         cacheHitRate.add(cacheHeader === 'HIT');
 
         check(res, {

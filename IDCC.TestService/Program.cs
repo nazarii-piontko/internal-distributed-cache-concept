@@ -52,11 +52,11 @@ app.MapGet("/{id:long}", async (
     CancellationToken cancellationToken) =>
 {
     var cacheKey = $"employee-{id}";
-    var cachedValue = await cache.GetAsync(cacheKey, cancellationToken);
-    if (cachedValue != null)
+    var cacheRetrivalResult = await cache.GetAsync(cacheKey, cancellationToken);
+    if (cacheRetrivalResult.Status == CacheRetrivalResult.ResultStatus.Found)
     {
         context.Response.Headers.Append("X-Cache", "HIT");
-        return JsonSerializer.Deserialize<EmployeeCacheData>(cachedValue)?.Data;
+        return JsonSerializer.Deserialize<EmployeeCacheData>(cacheRetrivalResult.Data!)?.Data;
     }
 
     var employee = await dbContext.Employers
@@ -99,12 +99,14 @@ app.MapPut("/{id:long}", async (
     await dbContext.SaveChangesAsync(cancellationToken);
 
     var cacheKey = $"employee-{id}";
-    await cache.SetAsync(
+    var cacheUpdateStatus = await cache.SetAsync(
         cacheKey,
         JsonSerializer.SerializeToUtf8Bytes(new EmployeeCacheData { Data = employee }),
         employee.Version,
         null,
         cancellationToken);
+    
+    context.Response.Headers.Append("X-Cache-Update", cacheUpdateStatus == CacheUpdateStatus.Updated ? "OK" : "FAIL");
 
     return employee;
 });
@@ -116,7 +118,7 @@ app.MapDefaultEndpoints();
 using (var scope = app.Services.CreateScope())
 {
     var seeder = scope.ServiceProvider.GetRequiredService<EmployeesDbContextSeeder>();
-    seeder.Seed(1000);
+    seeder.Seed(10000);
 }
 
 app.Run();

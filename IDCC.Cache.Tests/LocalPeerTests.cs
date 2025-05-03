@@ -29,7 +29,8 @@ public sealed class LocalPeerTests : IDisposable
         var result = await _peer.GetAsync("non-existent-key", CancellationToken.None);
 
         // Assert
-        Assert.Null(result);
+        Assert.Equal(PeerGetEntryResultStatus.NotFount, result.Status);
+        Assert.Null(result.Entry);
     }
 
     [Fact]
@@ -44,8 +45,8 @@ public sealed class LocalPeerTests : IDisposable
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal([1], result.Value?.Data);
-        Assert.Equal(1, result.Value?.Version);
+        Assert.Equal([1], result.Entry?.Data);
+        Assert.Equal(1, result.Entry?.Version);
     }
 
     [Fact]
@@ -60,7 +61,7 @@ public sealed class LocalPeerTests : IDisposable
 
         // Assert
         var result = await _peer.GetAsync(key, CancellationToken.None);
-        Assert.Null(result);
+        Assert.Equal(PeerGetEntryResultStatus.NotFount, result.Status);
     }
 
     [Fact]

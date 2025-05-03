@@ -17,15 +17,15 @@ internal sealed class PeerService(
         CheckLocalPeer();
 
         var result = await peersRegistry.LocalPeer!.GetAsync(request.Key, context.CancellationToken);
-        if (result.Status == GetResultStatus.NotFount)
+        if (result.Status == PeerGetEntryResultStatus.NotFount)
             throw new RpcException(new Status(StatusCode.NotFound, "Key not found"));
-        if (result.Status == GetResultStatus.Failed)
+        if (result.Status == PeerGetEntryResultStatus.Failed)
             throw new RpcException(new Status(StatusCode.Internal, "Failed to get value from peer"));
 
         var response = new GetResponse
         {
-            Value = ByteString.CopyFrom(result.Value!.Data),
-            Version = result.Value!.Version
+            Value = ByteString.CopyFrom(result.Entry!.Data),
+            Version = result.Entry.Version
         };
 
         return response;
@@ -37,14 +37,14 @@ internal sealed class PeerService(
 
         CheckLocalPeer();
 
-        var result = await peersRegistry.LocalPeer!.SetAsync(
+        var status = await peersRegistry.LocalPeer!.SetAsync(
             request.Key,
             request.Value.ToByteArray(),
             request.Version,
             request.HasTtlSeconds ? request.TtlSeconds : null,
             context.CancellationToken);
 
-        if (result.Status == SetResultStatus.NewerExists)
+        if (status == PeerSetEntryStatus.NewerExists)
             throw new RpcException(new Status(StatusCode.Aborted, "Version mismatch, newer version is stored"));
 
         return new SetResponse();
@@ -56,15 +56,15 @@ internal sealed class PeerService(
 
         CheckLocalPeer();
 
-        var result = await peersRegistry.LocalPeer!.RemoveAsync(
+        var status = await peersRegistry.LocalPeer!.RemoveAsync(
             request.Key,
             request.Version,
             context.CancellationToken);
 
-        if (result.Status == RemoveResultStatus.NotFound)
+        if (status == PeerRemoveEntryStatus.NotFound)
             throw new RpcException(new Status(StatusCode.NotFound, "Key not found"));
 
-        if (result.Status == RemoveResultStatus.VersionMismatch)
+        if (status == PeerRemoveEntryStatus.VersionMismatch)
             throw new RpcException(new Status(StatusCode.Aborted, "Version mismatch, newer version is stored"));
 
         return new RemoveResponse();

@@ -3,6 +3,7 @@ using Grpc.Core;
 using Grpc.Net.Client;
 using IDCC.Cache.Grpc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace IDCC.Cache.Peers;
 
@@ -11,6 +12,8 @@ internal sealed class RemotePeer(
     uint hash,
     GrpcChannel channel,
     PeerService.PeerServiceClient client,
+    TimeProvider timeProvider,
+    IOptions<InternalDistributedCacheOptions> options,
     ILogger<RemotePeer> logger)
     : IPeer
 {
@@ -20,24 +23,25 @@ internal sealed class RemotePeer(
 
     public PeerType Type => PeerType.Remote;
     
-    public async Task<GetResult> GetAsync(string key, CancellationToken cancellationToken)
+    public async Task<PeerGetEntryResult> GetAsync(string key, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         try
         {
             var request = new GetRequest { Key = key };
-            var response = await client.GetAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
-            var cachedValue = new CacheValue(response.Value.ToByteArray(), response.Version);
-            return GetResult.Found(cachedValue);
+            var callOptions = new CallOptions(deadline: GetDeadline(), cancellationToken: cancellationToken);
+            var response = await client.GetAsync(request, callOptions).ConfigureAwait(false);
+            var cachedValue = new PeerCacheEntry(response.Value.ToByteArray(), response.Version);
+            return PeerGetEntryResult.Found(cachedValue);
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
         {
-            return GetResult.NotFound();
+            return PeerGetEntryResult.NotFound();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get value from remote peer {Id}", Id);
-            return GetResult.NotFound();
+            return PeerGetEntryResult.NotFound();
         }
         finally
         {
@@ -46,7 +50,7 @@ internal sealed class RemotePeer(
         }
     }
 
-    public async Task<SetResult> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)
+    public async Task<PeerSetEntryStatus> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         try
@@ -60,13 +64,14 @@ internal sealed class RemotePeer(
             if (ttlSeconds.HasValue)
                 request.TtlSeconds = ttlSeconds.Value;
             
-            await client.SetAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var callOptions = new CallOptions(deadline: GetDeadline(), cancellationToken: cancellationToken);
+            await client.SetAsync(request, callOptions).ConfigureAwait(false);
             
-            return SetResult.Updated();
+            return PeerSetEntryStatus.Updated;
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Aborted)
         {
-            return SetResult.NewerExists();
+            return PeerSetEntryStatus.NewerExists;
         }
         catch (Exception ex)
         {
@@ -80,7 +85,7 @@ internal sealed class RemotePeer(
         }
     }
 
-    public async Task<RemoveResult> RemoveAsync(string key, long version, CancellationToken cancellationToken)
+    public async Task<PeerRemoveEntryStatus> RemoveAsync(string key, long version, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         try
@@ -91,17 +96,18 @@ internal sealed class RemotePeer(
                 Version = version
             };
             
-            await client.RemoveAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var callOptions = new CallOptions(deadline: GetDeadline(), cancellationToken: cancellationToken);
+            await client.RemoveAsync(request, callOptions).ConfigureAwait(false);
             
-            return RemoveResult.Removed();
+            return PeerRemoveEntryStatus.Removed;
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
         {
-            return RemoveResult.NotFound();
+            return PeerRemoveEntryStatus.NotFound;
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Aborted)
         {
-            return RemoveResult.VersionMismatch();
+            return PeerRemoveEntryStatus.VersionMismatch;
         }
         catch (Exception ex)
         {
@@ -113,6 +119,11 @@ internal sealed class RemotePeer(
             sw.Stop();
             logger.LogDebug("Remove for {Key} took {ElapsedMilliseconds}ms", key, sw.ElapsedMilliseconds);
         }
+    }
+    
+    private DateTime GetDeadline()
+    {
+        return timeProvider.GetUtcNow().UtcDateTime.AddMilliseconds(options.Value.PeerRequestTimeoutMs);
     }
 
     public void Dispose()

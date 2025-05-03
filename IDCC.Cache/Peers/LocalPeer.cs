@@ -23,21 +23,21 @@ internal sealed class LocalPeer : ILocalPeer
     
     public int CachedItemsCount => _cache is MemoryCache memoryCache ? memoryCache.Count : 0;
     
-    public Task<GetResult> GetAsync(string key, CancellationToken cancellationToken)
+    public Task<PeerGetEntryResult> GetAsync(string key, CancellationToken cancellationToken)
     {
         var cacheKey = new CacheKey(key);
         
         // Do not use lock here, as this is a read operation and IMemoryCache is thread-safe
         // ReSharper disable once InconsistentlySynchronizedField
-        var cacheValue = _cache.Get<CacheValue>(cacheKey);
+        var cacheValue = _cache.Get<PeerCacheEntry>(cacheKey);
         
-        return Task.FromResult(cacheValue == null ? GetResult.NotFound() : GetResult.Found(cacheValue));
+        return Task.FromResult(cacheValue == null ? PeerGetEntryResult.NotFound() : PeerGetEntryResult.Found(cacheValue));
     }
 
-    public Task<SetResult> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)
+    public Task<PeerSetEntryStatus> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)
     {
         var cachedKey = new CacheKey(key);
-        var cachedValue = new CacheValue(value, version);
+        var cachedValue = new PeerCacheEntry(value, version);
         
         var cacheOptions = new MemoryCacheEntryOptions
         {
@@ -52,19 +52,19 @@ internal sealed class LocalPeer : ILocalPeer
         // This lock implementation is not optimal for production use, but is sufficient for this example
         lock (_lock)
         {
-            var existingValue = _cache.Get<CacheValue>(cachedKey);
+            var existingValue = _cache.Get<PeerCacheEntry>(cachedKey);
             if (existingValue == null || existingValue.Version < version)
             {
                 _cache.Set(cachedKey, cachedValue, cacheOptions);
-                return Task.FromResult(SetResult.Updated()); 
+                return Task.FromResult(PeerSetEntryStatus.Updated); 
             }
 
             // Newer version exists, do not update
-            return Task.FromResult(SetResult.NewerExists());
+            return Task.FromResult(PeerSetEntryStatus.NewerExists);
         }
     }
 
-    public Task<RemoveResult> RemoveAsync(string key, long version, CancellationToken cancellationToken)
+    public Task<PeerRemoveEntryStatus> RemoveAsync(string key, long version, CancellationToken cancellationToken)
     {
         var cacheKey = new CacheKey(key);
 
@@ -72,20 +72,20 @@ internal sealed class LocalPeer : ILocalPeer
         // This lock implementation is not optimal for production use, but is sufficient for this example
         lock (_lock)
         {
-            var existingValue = _cache.Get<CacheValue>(cacheKey);
+            var existingValue = _cache.Get<PeerCacheEntry>(cacheKey);
             if (existingValue is null)
             {
-                return Task.FromResult(RemoveResult.NotFound());
+                return Task.FromResult(PeerRemoveEntryStatus.NotFound);
             }
             
             if (existingValue.Version != version)
             {
-                return Task.FromResult(RemoveResult.VersionMismatch());
+                return Task.FromResult(PeerRemoveEntryStatus.VersionMismatch);
             }
 
             _cache.Remove(cacheKey);
             
-            return Task.FromResult(RemoveResult.Removed());
+            return Task.FromResult(PeerRemoveEntryStatus.Removed);
         }
     }
 

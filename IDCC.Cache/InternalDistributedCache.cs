@@ -1,51 +1,112 @@
 using IDCC.Cache.Peers;
-using Microsoft.Extensions.Options;
 
 namespace IDCC.Cache;
 
-internal sealed class InternalDistributedCache(
-    IPeersRegistry peersRegistry,
-    IOptions<InternalDistributedCacheOptions> options)
+internal sealed class InternalDistributedCache(IPeersRegistry peersRegistry)
     : IInternalDistributedCache
 {
-    public async Task<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default)
+    public async Task<CacheRetrivalResult> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         var peers = peersRegistry.GetPeersForKey(key);
         var tasks = peers
             .Select(p => p.GetAsync(key, cancellationToken))
-            .ToList();
+            .ToArray();
 
-        var results = new List<GetResult>(tasks.Count);
+        var results = new List<PeerGetEntryResult>(tasks.Length);
         await foreach (var t in Task.WhenEach(tasks).WithCancellation(cancellationToken))
-        {
-            // Null in case of exception is not ideal, but it is fine for test purposes
             results.Add(t.Result);
+
+        int consensusSize = CalcConsensusSize(tasks.Length), foundCount = 0, notFoundCount = 0, failedCount = 0;
+        PeerCacheEntry? entryWithMaxVersion = null;
+        foreach (var result in results)
+        {
+            switch (result.Status)
+            {
+                case PeerGetEntryResultStatus.Found:
+                    if (entryWithMaxVersion == null || entryWithMaxVersion.Version < result.Entry!.Version)
+                        entryWithMaxVersion = result.Entry;
+                    foundCount++;
+                    break;
+                case PeerGetEntryResultStatus.NotFount:
+                    notFoundCount++;
+                    break;
+                case PeerGetEntryResultStatus.Failed:
+                    failedCount++;
+                    break;
+            }
         }
 
-        var maxVersionResult = results.Where(x => x.Status == GetResultStatus.Found).MaxBy(x => x.Value!.Version);
-        var maxVersion = maxVersionResult?.Value!.Version ?? long.MinValue;
-        var maxVersionCount = results.Where(x => x.Status == GetResultStatus.Found).Count(x => x.Value!.Version == maxVersion);
-        var notFoundCount = results.Count(x => x.Status == GetResultStatus.NotFount);
-
-        if (maxVersionCount > notFoundCount && maxVersionCount >= options.Value.MinReplicationConsensusSize)
-            return maxVersionResult?.Value!.Data;
-        return null;
+        if (foundCount >= consensusSize)
+            return CacheRetrivalResult.Found(entryWithMaxVersion!.Data);
+        if (notFoundCount >= consensusSize)
+            return CacheRetrivalResult.NotFound();
+        if (failedCount >= consensusSize)
+            return CacheRetrivalResult.Failed();
+        return CacheRetrivalResult.Inconsistent();
     }
 
-    public Task SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)
+    public async Task<CacheUpdateStatus> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)
     {
         var peers = peersRegistry.GetPeersForKey(key);
-        var tasks = peers.Select(p => p.SetAsync(key, value, version, ttlSeconds, cancellationToken));
+        var tasks = peers
+            .Select(p => p.SetAsync(key, value, version, ttlSeconds, cancellationToken))
+            .ToArray();
         
-        return Task.WhenAll(tasks);
+        var opStatuses = new List<PeerSetEntryStatus>(tasks.Length);
+        await foreach (var t in Task.WhenEach(tasks).WithCancellation(cancellationToken))
+            opStatuses.Add(t.Result);
+        
+        int consensusSize = CalcConsensusSize(tasks.Length), newerExistsCount = 0, failedCount = 0;
+        foreach (var opStatus in opStatuses)
+        {
+            switch (opStatus)
+            {
+                case PeerSetEntryStatus.NewerExists:
+                    newerExistsCount++;
+                    break;
+                case PeerSetEntryStatus.Failed:
+                    failedCount++;
+                    break;
+            }
+        }
+
+        if (newerExistsCount > 0)
+            return CacheUpdateStatus.NewerExists;
+        if (failedCount >= consensusSize)
+            return CacheUpdateStatus.Failed;
+        return CacheUpdateStatus.Updated;
     }
 
-    public Task RemoveAsync(string key, long version, CancellationToken cancellationToken = default)
+    public async Task<CacheRemoveStatus> RemoveAsync(string key, long version, CancellationToken cancellationToken = default)
     {
         var peers = peersRegistry.GetPeersForKey(key);
-        var tasks = peers.Select(p => p.RemoveAsync(key, version, cancellationToken));
+        var tasks = peers
+            .Select(p => p.RemoveAsync(key, version, cancellationToken))
+            .ToArray();
+        
+        var opStatuses = new List<PeerRemoveEntryStatus>(tasks.Length);
+        await foreach (var t in Task.WhenEach(tasks).WithCancellation(cancellationToken))
+            opStatuses.Add(t.Result);
+        
+        int consensusSize = CalcConsensusSize(tasks.Length), versionMismatch = 0, failedCount = 0;
+        foreach (var opStatus in opStatuses)
+        {
+            switch (opStatus)
+            {
+                case PeerRemoveEntryStatus.VersionMismatch:
+                    versionMismatch++;
+                    break;
+                case PeerRemoveEntryStatus.Failed:
+                    failedCount++;
+                    break;
+            }
+        }
 
-        return Task.WhenAll(tasks);
+        if (versionMismatch > 0)
+            return CacheRemoveStatus.VersionMismatch;
+        if (failedCount >= consensusSize)
+            return CacheRemoveStatus.Failed;
+        return CacheRemoveStatus.Removed;
     }
 
     public InternalDistributedCacheInfo GetInfo()
@@ -56,4 +117,6 @@ internal sealed class InternalDistributedCache(
             peersRegistry.DiscoveredPeers.Select(p => p.Id).ToList(),
             localPeer?.CachedItemsCount ?? 0);
     }
+    
+    private static int CalcConsensusSize(int peers) => peers / 2 + 1;
 }

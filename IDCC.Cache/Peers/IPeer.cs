@@ -8,11 +8,11 @@ internal interface IPeer : IDisposable, IAsyncDisposable
     
     PeerType Type { get; }
     
-    Task<GetResult> GetAsync(string key, CancellationToken cancellationToken);
+    Task<PeerGetEntryResult> GetAsync(string key, CancellationToken cancellationToken);
 
-    Task<SetResult> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken);
+    Task<PeerSetEntryStatus> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken);
 
-    Task<RemoveResult> RemoveAsync(string key, long version, CancellationToken cancellationToken);
+    Task<PeerRemoveEntryStatus> RemoveAsync(string key, long version, CancellationToken cancellationToken);
 }
 
 internal interface ILocalPeer : IPeer
@@ -24,7 +24,7 @@ internal interface ILocalPeer : IPeer
     void Remove(string key);
 }
 
-internal sealed record CacheValue(byte[] Data, long Version)
+internal record PeerCacheEntry(byte[] Data, long Version)
 {
     public long? GetSize()
     {
@@ -36,77 +36,43 @@ internal sealed record CacheValue(byte[] Data, long Version)
     }
 }
 
-internal enum GetResultStatus
+internal enum PeerGetEntryResultStatus
 {
     Found,
     NotFount,
     Failed
 }
 
-internal sealed  class GetResult
+internal readonly struct PeerGetEntryResult
 {
-    public GetResultStatus Status { get; }
+    public PeerGetEntryResultStatus Status { get; }
     
-    public CacheValue? Value { get; }
+    public PeerCacheEntry? Entry { get; }
     
-    private GetResult(GetResultStatus status, CacheValue? value)
+    private PeerGetEntryResult(PeerGetEntryResultStatus status, PeerCacheEntry? entry)
     {
         Status = status;
-        Value = value;
+        Entry = entry;
     }
     
-    public static GetResult Found(CacheValue value) => new(GetResultStatus.Found, value);
+    public static PeerGetEntryResult Found(PeerCacheEntry entry) => new(PeerGetEntryResultStatus.Found, entry);
     
-    public static GetResult NotFound() => new(GetResultStatus.NotFount, null);
+    public static PeerGetEntryResult NotFound() => new(PeerGetEntryResultStatus.NotFount, null);
     
-    public static GetResult Failed() => new(GetResultStatus.Failed, null);
+    public static PeerGetEntryResult Failed() => new(PeerGetEntryResultStatus.Failed, null);
 }    
 
-internal enum SetResultStatus
+public enum PeerSetEntryStatus
 {
     Updated,
     NewerExists,
     Failed
 }
 
-internal sealed  class SetResult
-{
-    public SetResultStatus Status { get; }
-    
-    private SetResult(SetResultStatus status)
-    {
-        Status = status;
-    }
-    
-    public static SetResult Updated() => new(SetResultStatus.Updated);
-    
-    public static SetResult NewerExists() => new(SetResultStatus.NewerExists);
-    
-    public static SetResult Failed() => new(SetResultStatus.Failed);
-}
-
-internal enum RemoveResultStatus
+internal enum PeerRemoveEntryStatus
 {
     Removed,
     NotFound,
     VersionMismatch,
     Failed
-}
-
-internal sealed class RemoveResult
-{
-    public RemoveResultStatus Status { get; }
-    
-    private RemoveResult(RemoveResultStatus status)
-    {
-        Status = status;
-    }
-    
-    public static RemoveResult Removed() => new(RemoveResultStatus.Removed);
-    
-    public static RemoveResult NotFound() => new(RemoveResultStatus.NotFound);
-    
-    public static RemoveResult VersionMismatch() => new(RemoveResultStatus.VersionMismatch);
-    
-    public static RemoveResult Failed() => new(RemoveResultStatus.Failed);
 }

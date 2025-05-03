@@ -1,4 +1,4 @@
-.PHONY: kind namespaces db app scale-up scale-down k6 all
+.PHONY: kind namespaces db db-down app app-down scale-up scale-down k6 all
 
 all: kind namespaces db app
 
@@ -9,15 +9,20 @@ kind:
 namespaces:
 	kubectl --context kind-idcc create namespace test
 
-db:
+db-down:
 	kubectl -n test --context kind-idcc delete -f postgres.yaml || true
+
+db: db-down
+	
 	kubectl -n test --context kind-idcc apply -f postgres.yaml
 	kubectl -n test wait pod/postgres --for=condition=Ready --timeout=120s
 
-app:
+app-down:
+	kubectl -n test --context kind-idcc delete -f deployment.yaml || true
+
+app: app-down
 	docker build -t idcc:latest -f ./Dockerfile ../
 	kind load docker-image idcc:latest --name idcc
-	kubectl -n test --context kind-idcc delete -f deployment.yaml || true
 	kubectl -n test --context kind-idcc create -f deployment.yaml
 
 define scale_deployment

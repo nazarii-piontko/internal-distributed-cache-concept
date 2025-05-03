@@ -24,7 +24,7 @@ public sealed class EmployeesDbContextSeeder(EmployeesDbContext context)
         {
             var departments = context.Departments.ToList();
             var faker = new Faker<Employee>()
-                .RuleFor(e => e.Email, f => f.Internet.Email())
+                .RuleFor(e => e.Email, f => f.Internet.Email(uniqueSuffix: f.UniqueIndex.ToString()))
                 .RuleFor(e => e.FullName, f => f.Name.FullName())
                 .RuleFor(e => e.Department, f => f.PickRandom(departments))
                 .RuleFor(e => e.Version, f => 1);
