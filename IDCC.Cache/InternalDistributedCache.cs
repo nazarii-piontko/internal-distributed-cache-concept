@@ -5,7 +5,7 @@ namespace IDCC.Cache;
 internal sealed class InternalDistributedCache(IPeersRegistry peersRegistry)
     : IInternalDistributedCache
 {
-    public async Task<CacheRetrivalResult> GetAsync(string key, CancellationToken cancellationToken = default)
+    public async Task<CacheRetrievalResult> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         var peers = peersRegistry.GetPeersForKey(key);
         var tasks = peers
@@ -27,7 +27,7 @@ internal sealed class InternalDistributedCache(IPeersRegistry peersRegistry)
                         entryWithMaxVersion = result.Entry;
                     foundCount++;
                     break;
-                case PeerGetEntryResultStatus.NotFount:
+                case PeerGetEntryResultStatus.NotFound:
                     notFoundCount++;
                     break;
                 case PeerGetEntryResultStatus.Failed:
@@ -37,12 +37,12 @@ internal sealed class InternalDistributedCache(IPeersRegistry peersRegistry)
         }
 
         if (foundCount >= consensusSize)
-            return CacheRetrivalResult.Found(entryWithMaxVersion!.Data);
+            return CacheRetrievalResult.Found(entryWithMaxVersion!.Data);
         if (notFoundCount >= consensusSize)
-            return CacheRetrivalResult.NotFound();
+            return CacheRetrievalResult.NotFound();
         if (failedCount >= consensusSize)
-            return CacheRetrivalResult.Failed();
-        return CacheRetrivalResult.Inconsistent();
+            return CacheRetrievalResult.Failed();
+        return CacheRetrievalResult.Inconsistent();
     }
 
     public async Task<CacheUpdateStatus> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken)

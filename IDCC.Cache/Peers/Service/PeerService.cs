@@ -17,7 +17,7 @@ internal sealed class PeerService(
         CheckLocalPeer();
 
         var result = await peersRegistry.LocalPeer!.GetAsync(request.Key, context.CancellationToken);
-        if (result.Status == PeerGetEntryResultStatus.NotFount)
+        if (result.Status == PeerGetEntryResultStatus.NotFound)
             throw new RpcException(new Status(StatusCode.NotFound, "Key not found"));
         if (result.Status == PeerGetEntryResultStatus.Failed)
             throw new RpcException(new Status(StatusCode.Internal, "Failed to get value from peer"));

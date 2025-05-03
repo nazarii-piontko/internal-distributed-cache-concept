@@ -52,11 +52,11 @@ app.MapGet("/{id:long}", async (
     CancellationToken cancellationToken) =>
 {
     var cacheKey = $"employee-{id}";
-    var cacheRetrivalResult = await cache.GetAsync(cacheKey, cancellationToken);
-    if (cacheRetrivalResult.Status == CacheRetrivalResult.ResultStatus.Found)
+    var cacheRetrievalResult = await cache.GetAsync(cacheKey, cancellationToken);
+    if (cacheRetrievalResult.Status == CacheRetrievalResult.ResultStatus.Found)
     {
         context.Response.Headers.Append("X-Cache", "HIT");
-        return JsonSerializer.Deserialize<EmployeeCacheData>(cacheRetrivalResult.Data!)?.Data;
+        return JsonSerializer.Deserialize<EmployeeCacheData>(cacheRetrievalResult.Data!)?.Data;
     }
 
     var employee = await dbContext.Employers

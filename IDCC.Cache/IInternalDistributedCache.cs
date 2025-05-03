@@ -2,7 +2,7 @@
 
 public interface IInternalDistributedCache
 {
-    Task<CacheRetrivalResult> GetAsync(string key, CancellationToken cancellationToken = default);
+    Task<CacheRetrievalResult> GetAsync(string key, CancellationToken cancellationToken = default);
 
     Task<CacheUpdateStatus> SetAsync(string key, byte[] value, long version, int? ttlSeconds, CancellationToken cancellationToken = default);
 
@@ -11,7 +11,7 @@ public interface IInternalDistributedCache
     InternalDistributedCacheInfo GetInfo();
 }
 
-public readonly struct CacheRetrivalResult
+public readonly struct CacheRetrievalResult
 {
     public enum ResultStatus
     {
@@ -25,19 +25,19 @@ public readonly struct CacheRetrivalResult
     
     public byte[]? Data { get; }
 
-    private CacheRetrivalResult(ResultStatus status, byte[]? data = null)
+    private CacheRetrievalResult(ResultStatus status, byte[]? data = null)
     {
         Status = status;
         Data = data;
     }
 
-    internal static CacheRetrivalResult Found(byte[] data) => new CacheRetrivalResult(ResultStatus.Found, data);
+    internal static CacheRetrievalResult Found(byte[] data) => new CacheRetrievalResult(ResultStatus.Found, data);
     
-    internal static CacheRetrivalResult NotFound() => new CacheRetrivalResult(ResultStatus.NotFound);
+    internal static CacheRetrievalResult NotFound() => new CacheRetrievalResult(ResultStatus.NotFound);
     
-    internal static CacheRetrivalResult Inconsistent() => new CacheRetrivalResult(ResultStatus.Inconsistent);
+    internal static CacheRetrievalResult Inconsistent() => new CacheRetrievalResult(ResultStatus.Inconsistent);
     
-    internal static CacheRetrivalResult Failed() => new CacheRetrivalResult(ResultStatus.Failed);
+    internal static CacheRetrievalResult Failed() => new CacheRetrievalResult(ResultStatus.Failed);
 }
 
 public enum CacheUpdateStatus

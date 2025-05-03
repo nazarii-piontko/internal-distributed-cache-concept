@@ -39,7 +39,7 @@ internal record PeerCacheEntry(byte[] Data, long Version)
 internal enum PeerGetEntryResultStatus
 {
     Found,
-    NotFount,
+    NotFound,
     Failed
 }
 
@@ -57,7 +57,7 @@ internal readonly struct PeerGetEntryResult
     
     public static PeerGetEntryResult Found(PeerCacheEntry entry) => new(PeerGetEntryResultStatus.Found, entry);
     
-    public static PeerGetEntryResult NotFound() => new(PeerGetEntryResultStatus.NotFount, null);
+    public static PeerGetEntryResult NotFound() => new(PeerGetEntryResultStatus.NotFound, null);
     
     public static PeerGetEntryResult Failed() => new(PeerGetEntryResultStatus.Failed, null);
 }    
